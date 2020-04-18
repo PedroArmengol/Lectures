@@ -1,0 +1,388 @@
+---
+title: "Clase_Ibero_2020"
+author: "Pedro Armengol y Esteban Marín"
+date: "16/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+rm(list = ls())
+
+library("dplyr")
+library("ggplot2")
+library("knitr")
+library("rmarkdown")
+library("corrplot")
+```
+
+## Contexto de negocio
+
+Cinépolis es la tercera empresa, por número de asistentes, más grande del mundo en la industria exhibición filmica. Con 40,000 empleados y presencia en más de 17 paises, es un ejemplo sobre como una empresa local - de Morelía, Michoacan - puede, con disciplina e inversiones estratégicas llegar a ser un jugar clave en su industria a escala global.
+
+&nbsp;
+
+Uno de los componentes más importantes de la compañia es su programa de lealtad: Club Cinépolis (CC), con más de 5 millones de socios, es uno de los programas más extensos de América Latina, con un valor estimado en varios miles de millones de pesos.
+
+&nbsp;
+
+Recientemente, el equipo de Ciencia de Datos (CD) de Cinépolis estimó el valor del programa con el objetivo de justificar las inversiones 
+dirigidas hacia incrementar la base de usuarios, disminuir la tasa de deserción (Churn-rate) y, en general, mejorar las reglas del programa.
+
+El programa CC tiene 3 niveles de lealtad en México: FAN, FANÁTICO y SUPER FANÁTICO. Cada nivel implica más beneficios que el nivel anterior. Uno de los "insights" encontrados por el equipo CD es que cuando un cliente cambia de Fan a Fanático (pasa del nivel inicial al primer nivel) tiene 16% más visitas e incrementa en el mismo porcentaje su consumo de taquilla y dulcería. 
+
+&nbsp;
+
+## Misión:
+
+Fuiste contratado recientemente como Cientifico de Datos y tu objetivo es diseñar una estrategia con análisis de datos para localizar que clientes son más propensos a cambiar de estatus. Encontrando dichos clientes, el equipo de Marketing los puede contactar para darles un "nudge" tal que incremente su probabilidad de cambiar de nivel. En el agregado, esta estrategia puede generar más de 150 millones de MXN adicionales por año para la empresa.
+
+## Contexto de datos
+
+Tienes una tabla con un sample de 4000 socios. Dicha tabla tiene el agregado de transacciones a nivel socio día. El periodo de análisis va del 2017 al 2019. Por motivos de privacidad de la información, el ID de los socios fue encryptado.
+
+Las columnas son las siguientes (una vez utlizado el código para limpiar el nombre de las columnas - ver abajo):
+- fecha: dia-mes-año formato YYYY-mm-dd
+- id: identificador unico encryptado por socio
+- nivel: "FAN" o "FANATICO"
+- boletos: número de boletos comprados - estandarizada
+- taquilla: monto gastado en taquilla (MXN) - estandarizada
+- dulceria: monto gastado en dulceria (MXN) - estandarizada
+
+## Pasos
+
+### Importa los datos
+```{r datos}
+
+setwd("/Users/macbookpro/Documents/CLV_1/Data")
+
+master <- read.csv("master_test.csv")
+
+```
+
+### Usaremos las siguientes funciones durante el análisis de caso
+
+```{r funciones}
+
+  aggregate_data <- function(data) {
+
+    data_agg <- data  %>% group_by(id,fecha,nivel) %>% summarise(
+                    
+                    boletos = sum(boletos),
+                    taquilla = sum(taquilla),
+                    dulceria = sum(dulceria)
+                    
+                  )
+
+            print("Estadísticos por visita") 
+            
+            
+            t1 <- t.test(taquilla ~ nivel, data = data_agg)
+            
+            print(t1)
+            
+            t2 <- t.test(dulceria ~ nivel, data = data_agg)
+            
+            print(t2)
+            
+            t3 <- t.test(boletos ~ nivel, data = data_agg)
+            
+            print(t3)
+            
+            print("Estadísticos por nivel") 
+            
+            data_agg1 <- data  %>% group_by(id,nivel) %>% summarise(
+                    
+                    num = n(),
+                    boletos = sum(boletos),
+                    taquilla = sum(taquilla),
+                    dulceria = sum(dulceria)
+                    
+                  )
+            
+            t4 <- t.test(num ~ nivel, data = data_agg1)
+            
+            print(t4)
+            
+            t5 <- t.test(taquilla ~ nivel, data = data_agg1)
+            
+            print(t5)
+            
+            t6 <- t.test(dulceria ~ nivel, data = data_agg1)
+            
+            print(t6)
+            
+            t7 <- t.test(boletos ~ nivel, data = data_agg1)
+            
+            print(t7)
+    
+    return(data_agg1)
+
+  }
+
+
+unique_status <- function(data) {
+
+      tccs <- data %>% group_by(id, nivel) %>% summarise(num = n()) 
+      
+      tccs <- tccs %>% group_by(id) %>% summarise(num = n()) %>% filter(num == 1)
+      
+      unique_status <- unique(tccs$id)
+    
+      data$unique[data$id %in% unique_status] <- 0
+      data$unique[is.na(data$unique) == T] <- 1
+      
+      return(data)
+      
+}
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+
+```
+
+
+### utiliza la función "aggregate_data" para comenzar el primer Exploratory Data Analysis (EDA) de los datos (ver chunk funciones). Asimismo, obten una tabla agregada por id y nivel.
+
+```{r eda}
+master_agg <- aggregate_data(master)
+```
+
+### ¿Qué otros analisis exploratorios se te ocurren? ¿Histograma de número de visitas de clientes que cambiaron de nivel contra aquellos que no cambiaron? Para esto necesitamos saber quienes cambiaron de nivel y quienes no, usa la función "unique_status" para crear una indicadora llamada "unique" (0== solo FAN, 1== FAN y FANATICO)
+
+```{r unique_status}
+master_agg <- unique_status(master_agg)
+```
+
+### Separa aquellos clientes que cambiaron de nivel de los que no (puedes usar la función subset). Guarda la tabla master_1 (cambiaron de nivel) y master_2 (no cambiaron de nivel)
+
+```{r subset}
+
+master_1 <- subset(master_agg, unique == 1)
+master_2 <- subset(master_agg, unique == 0)
+
+```
+
+### ¿Cuantos clientes cambiaron de nivel y cuantos clientes no?
+
+```{r length}
+
+# No cambiaron de nivel
+length(unique(master_2$id))
+
+# Cambiaron de nivel
+length(unique(master_1$id))
+
+
+```
+
+### Construye una indicadora ("dummy") que tome el valor de 1 si el cliente cambio de nivel y 0 si se mantuvo en el nivel base
+
+```{r indicadora}
+unique(master$nivel)
+
+master_agg$treatment[master_agg$nivel == "'FAN'"] <- 0
+master_agg$treatment[master_agg$nivel == "'FANATICO'"] <- 1
+
+```
+
+### EDA Modelaje, usemos OLS para modelar la indicadora con base en un vector de predictores X. 
+
+```{r eda_model}
+corr_data <- master_agg %>% select(num,boletos,taquilla,dulceria, treatment)
+
+mydata.cor = cor(corr_data)
+
+print(mydata.cor)
+
+corrplot(mydata.cor)
+
+# No hay variables muy relevantes para predecir treatment. ¿Qué tal crear un lag?
+
+master_agg <- master_agg %>% arrange(id,treatment) %>% group_by(id) %>% mutate(lag_num = dplyr::lag(num, n = 1,default=NA))
+
+# El lag solo funciona para aquellos que cambiaron de nivel - Si no no tiene historia post treatment == 1
+```
+
+### IDEA: OLS solo con historia FAN
+
+```{r eda_model_1}
+
+master_agg_fan <- subset(master_agg, treatment == 0)
+
+master_agg_fan$lag_num <- NULL
+master_agg_fan$num_lag <- NULL
+master_agg_fan$treatment <- NULL
+
+names(master_agg_fan)[names(master_agg_fan) == "unique"] <- "treatment"
+
+corr_data <- master_agg_fan %>% select(num,boletos,taquilla,dulceria, treatment)
+
+mydata.cor = cor(corr_data)
+
+print(mydata.cor)
+
+corrplot(mydata.cor)
+
+```
+
+
+### Puede funcionar. Hagamos una partición in sample y out of sample para tener un training y testing set.
+
+```{r partition}
+ids_out <- as.data.frame((unique(master_agg_fan$id)))
+
+colnames(ids_out)[1] <- c("ids")
+      
+ids_out_sample <- sample_n(ids_out, 800)
+      
+master_fan_out <- subset(master_agg_fan,id %in% ids_out_sample$ids)
+master_fan_in <- subset(master_agg_fan,id %!in% ids_out_sample$ids)
+
+length(unique(master_fan_out$id))
+
+length(unique(master_fan_in$id))
+
+### TU: Segundo Validación
+
+```
+
+### Corramos el OLS en el "training_set" y veamos como sale.
+
+```{r ols-traininb}
+lmodel <- lm(treatment ~ num+boletos+taquilla+dulceria, data = master_fan_in)
+summary(lmodel)
+
+master_fan_in$score <- predict(lmodel, master_fan_in)
+
+```
+
+
+### R2 del 0.25. Poder predictivo bajo en este modelo.¿Qué variables podemos agregar para mejorar el poder predictivo? ¿Qué transformaciones lineales/no lineales se pueden hacer? ¿Otro algortimos?
+
+Igual seguiremos con la extrapolación para ver que tan bien estamos prediciendo.
+
+```{r validation}
+master_fan_out$score <- predict(lmodel, master_fan_out)
+
+cor(master_fan_out$score , master_fan_out$treatment)
+
+master_fan_out$treatment <- as.numeric(master_fan_out$treatment)
+
+boxplot(score~treatment,data=master_fan_out, main="Scores by treatment",
+   xlab="Treatment", ylab="Scores") 
+
+hist(master_fan_out$score[master_fan_out$treatment == 1])
+
+hist(master_fan_out$score[master_fan_out$treatment == 0])
+
+# Interesante, si ponemos un cut-off alrededor de 0.6 tendremos buena relativamente buena precision (verdaderos/(verdaderos + falsos positivos) y un recall de alrededor de 3/4 (verdaderos/totales)
+
+# Mientras más subamos la vara, subira la precisión pero bajará el recall (de los que señalemos serán verdaderamente cambios pero de todos los cambios totales, señalaremos menos)
+
+### TU: aplica log a la variable y dinos como se ven tus resultados
+
+
+```
+
+
+```{r precision,recall,accuracy}
+
+master_fan_out$predict <- ifelse(master_fan_out$score >= 0.6,1,0)
+
+true <- sum(ifelse(master_fan_out$treatment == 1 & master_fan_out$predict == 1,1,0))
+
+false <- sum(ifelse(master_fan_out$treatment == 0 & master_fan_out$predict == 1,1,0))
+
+total <- sum(ifelse(master_fan_out$treatment == 1,1,0))
+
+precision <- (true/(true+false))*100
+
+recall <- (true/total)*100
+
+print(precision)
+print(recall)
+
+# El 80% de los casos que decimos cambiaran, cambian
+# De todos los cambios, localizamos al 50% de ellos
+
+# ¿Qué pasa si subimos el cut-off?
+
+master_fan_out$predict <- ifelse(master_fan_out$score >= 0.8,1,0)
+
+true <- sum(ifelse(master_fan_out$treatment == 1 & master_fan_out$predict == 1,1,0))
+
+false <- sum(ifelse(master_fan_out$treatment == 0 & master_fan_out$predict == 1,1,0))
+
+total <- sum(ifelse(master_fan_out$treatment == 1,1,0))
+
+precision <- (true/(true+false))*100
+
+recall <- (true/total)*100
+
+print(precision)
+print(recall)
+
+# El 87.5% de los casos que decimos cambiaran, cambian
+# De todos los cambios, localizamos al 19.25% de ellos
+
+# En este caso, el trade-off de incrementar precisión no vale la pena ya que un falso positivo no es muy costoso (mandarle un email a alguien que no va a cambiar no cuesta vidas.)
+
+# Predecir que alguien tendrá cancer y darle quimioterapia cuando es un falso positivo crearia otro tipo de trade-off, por ejemplo.
+
+
+```
+
+# Ya que definimos el cut-off en 0.6 aplicaremos el modelo en toda la muestra - training y testing para determinar que clientes cambiaran. Recuerden, tendremos un 20% de falsos positivos y predeciremos el 50% de los cambios
+
+```{r extrapolation}
+master_agg_fan$score <- predict(lmodel, master_agg_fan)
+
+master_agg_fan$predict <- ifelse(master_agg_fan$score >= 0.6,1,0)
+
+#Nos quedamos solo con los que no han cambiado
+
+master_agg_fan <- subset(master_agg_fan, treatment == 0)
+
+# Nos quedamos solo con los que predecimos, cambiaran
+
+master_agg_fan <- subset(master_agg_fan, predict == 1)
+
+```
+
+### Es hora de compartir los resultados con el equipo de Marketing para que comiencen a contactar a los cliente
+
+```{r save}
+
+master_agg_fan <- master_agg_fan %>% select(id,score)
+
+setwd("/Users/macbookpro/Documents/CLV_1/Data")
+
+write.csv(master_agg_fan,"2020-04-16_Marketing_dep.csv",row.names=FALSE)
+
+```
+
+
+### Business value: CD estimo que por cada cliente que cambia de FAN A FANATICO, la compañia genera $35 USD incrementales por año. Suponiendo que todos los clientes predecidos van a cambiar de nivel solo si reciben un "nudge", cuanto vale tu análisis? Asume usar la plataforma para poder dar el "nudge" cuesta 1$ USD por cliente contactado.
+
+```{r business_value}
+
+print("Ingreso incremental en sample:")
+value_s = 244*0.8*35 - 244*1
+print(paste(paste("$",value_s),"USD"))
+
+print("Ingreso incremental en universo:")
+porc = 244/2000
+value_u = 2000000*porc*0.8*35 - 2000000*porc*1
+
+print(paste(paste("$",value_u),"USD"))
+
+```
+
+### 6.5M USD es un número que mueve la "aguja" de la compañia, el top managment de la empresa esta muy interesado en entender tu estrategia cuantitativa para llegar a este resultado. Realiza un deck con 3 slides en donde expliques, objetivo, metodología y resultados de este proyecto.
+
+```{r deck}
+
+```
